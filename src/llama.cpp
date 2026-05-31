@@ -46,6 +46,18 @@ const char * llama_flash_attn_type_name(enum llama_flash_attn_type flash_attn_ty
     GGML_ABORT("fatal error");
 }
 
+const char * llama_flash_attn_mask_type_name(enum llama_flash_attn_mask_type flash_attn_mask_type) {
+    switch (flash_attn_mask_type) {
+        case LLAMA_FLASH_ATTN_MASK_F16:
+            return "f16";
+        case LLAMA_FLASH_ATTN_MASK_U8:
+            return "u8";
+        case LLAMA_FLASH_ATTN_MASK_BIT:
+            return "bit";
+    }
+    GGML_ABORT("fatal error");
+}
+
 struct llama_sampler_chain_params llama_sampler_chain_default_params() {
     struct llama_sampler_chain_params result = {
         /*.no_perf =*/ true,

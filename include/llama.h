@@ -191,6 +191,14 @@ extern "C" {
 
     LLAMA_API const char * llama_flash_attn_type_name(enum llama_flash_attn_type flash_attn_type);
 
+    enum llama_flash_attn_mask_type {
+        LLAMA_FLASH_ATTN_MASK_F16 = 0,
+        LLAMA_FLASH_ATTN_MASK_U8  = 1,
+        LLAMA_FLASH_ATTN_MASK_BIT = 2,
+    };
+
+    LLAMA_API const char * llama_flash_attn_mask_type_name(enum llama_flash_attn_mask_type flash_attn_mask_type);
+
     enum llama_split_mode {
         LLAMA_SPLIT_MODE_NONE   = 0, // single GPU
         LLAMA_SPLIT_MODE_LAYER  = 1, // split layers and KV across GPUs
@@ -346,7 +354,8 @@ extern "C" {
         enum llama_rope_scaling_type rope_scaling_type; // RoPE scaling type, from `enum llama_rope_scaling_type`
         enum llama_pooling_type      pooling_type;      // whether to pool (sum) embedding results by sequence id
         enum llama_attention_type    attention_type;    // attention type to use for embeddings
-        enum llama_flash_attn_type   flash_attn_type;   // when to enable Flash Attention
+        enum llama_flash_attn_type   flash_attn_type;      // when to enable Flash Attention
+        enum llama_flash_attn_mask_type flash_attn_mask_type; // mask format for Flash Attention (f16, u8, bit)
 
         // ref: https://github.com/ggml-org/llama.cpp/pull/2054
         float    rope_freq_base;   // RoPE base frequency, 0 = from model
