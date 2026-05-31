@@ -14,13 +14,39 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <map>
 #include <numeric>
 #include <sstream>
 #include <unordered_set>
 
 // dedup helpers
 
+template <typename T>
+static void debug_histogram_kq_mask(const T * data, int64_t n_elements) {
+    const char * env = std::getenv("LLAMA_DEBUG_KQ_MASK_HIST");
+    if (!env || env[0] == '0') {
+        return;
+    }
+
+    std::map<float, int64_t> hist;
+    for (int64_t i = 0; i < n_elements; ++i) {
+        float val = llama_cast<float>(data[i]);
+        hist[val]++;
+    }
+
+    fprintf(stderr, "%s: KQ mask histogram (%lld elements, %zu unique values):\n",
+            __func__, (long long)n_elements, hist.size());
+    for (const auto & entry : hist) {
+        if (std::isinf(entry.first) && entry.first < 0) {
+            fprintf(stderr, "  -inf  : %lld (%.1f%%)\n", (long long)entry.second, 100.0 * entry.second / n_elements);
+        } else {
+            fprintf(stderr, "  %.6g : %lld (%.1f%%)\n", entry.first, (long long)entry.second, 100.0 * entry.second / n_elements);
+        }
+    }
+}
 static ggml_tensor * build_attn_inp_kq_mask(
         ggml_context * ctx,
         const llama_kv_cache_context * mctx,
@@ -469,6 +495,12 @@ void llm_graph_input_attn_no_cache::set_input(const llama_ubatch * ubatch) {
         fill_mask((ggml_fp16_t *) self_kq_mask->data, ggml_nelements(self_kq_mask), 0, LLAMA_SWA_TYPE_NONE);
     } else {
         fill_mask((float       *) self_kq_mask->data, ggml_nelements(self_kq_mask), 0, LLAMA_SWA_TYPE_NONE);
+    }
+
+    if (self_kq_mask->type == GGML_TYPE_F16) {
+        debug_histogram_kq_mask((const ggml_fp16_t *) self_kq_mask->data, ggml_nelements(self_kq_mask));
+    } else {
+        debug_histogram_kq_mask((const float *) self_kq_mask->data, ggml_nelements(self_kq_mask));
     }
 
     if (hparams.swa_type != LLAMA_SWA_TYPE_NONE) {
