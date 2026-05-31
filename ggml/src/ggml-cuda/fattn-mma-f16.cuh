@@ -455,26 +455,15 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_mask(
     constexpr int warp_size = ggml_cuda_get_physical_warp_size();
 
     if (mask_type == 1) {
-        // u8 mask: read bytes, convert to half (0x00 -> 0.0, 0xFF -> -inf)
-        const uint8_t * mask_u8 = (const uint8_t *)mask_raw;
+        // TEST: fill all 0.0 (attend everywhere) to isolate the bug
 #pragma unroll
         for (int j1 = 0; j1 < ncols1; j1 += nwarps) {
             const int j_sram = j1 + threadIdx.y;
-            const int j_vram = fastmodulo(j0 + j_sram, ne01);
-
-            if (j1 + nwarps > ncols1 && j_sram >= ncols1) {
-                break;
-            }
-
+            if (j1 + nwarps > ncols1 && j_sram >= ncols1) break;
 #pragma unroll
             for (int i0 = 0; i0 < nbatch_fa; i0 += warp_size) {
                 const int i = i0 + threadIdx.x;
-
-                if (i < i_sup) {
-                    tile_mask[j_sram*(nbatch_fa + 8) + i] = __ushort_as_half(mask_u8[int64_t(j_vram)*stride_mask + i] ? 0xFC00u : 0x0000u);
-                } else {
-                    tile_mask[j_sram*(nbatch_fa + 8) + i] = __ushort_as_half(0x0000u);
-                }
+                tile_mask[j_sram*(nbatch_fa + 8) + i] = __ushort_as_half(0x0000u);
             }
         }
     } else {
@@ -628,17 +617,6 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         if (ncols2 > 1 || mask_raw) {
             flash_attn_ext_f16_load_mask<ncols1, nwarps, nbatch_fa, use_cp_async, oob_check>
                 (mask_raw + int64_t(k_VKQ_0)*mask_elem_size, tile_mask, stride_mask, k_VKQ_sup, jt*ncols1, ne01, mask_type);
-        }
-        // DEBUG: dump tile_mask after load in nstages<=1 path
-        if (blockIdx.x == 0 && threadIdx.x == 0 && threadIdx.y == 0 && mask_raw && mask_type == 1) {
-            printf("F8FA tile_mask iter: nbatch_fa=%d ncols1=%d k_VKQ_0=%d jt=%d stride_mask=%d\n", nbatch_fa, ncols1, k_VKQ_0, jt, stride_mask);
-            for (int j = 0; j < 4 && j < ncols1; ++j) {
-                printf("  row %d:", j);
-                for (int i = 0; i < 16 && i < nbatch_fa; ++i) {
-                    printf(" %04X", (unsigned)__half_as_ushort(tile_mask[j*(nbatch_fa + 8) + i]));
-                }
-                printf("\n");
-            }
         }
     }
 
@@ -1314,20 +1292,6 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
             (K_h2 + int64_t(kb0)*nbatch_fa*stride_K, tile_K, nbatch_K2, stride_K, k_VKQ_sup);
     }
 
-    // DEBUG: dump tile_mask after load
-    if (blockIdx.x == 0 && threadIdx.x == 0 && threadIdx.y == 0 && mask_raw && mask_type == 1) {
-        cp_async_wait_all();
-        __syncthreads();
-        printf("F8FA tile_mask after load: nbatch_fa=%d ncols1=%d kb0=%d jt=%d\n", nbatch_fa, ncols1, kb0, jt);
-        for (int j = 0; j < 4 && j < ncols1; ++j) {
-            printf("  row %d:", j);
-            for (int i = 0; i < 16 && i < nbatch_fa; ++i) {
-                printf(" %04X", (unsigned)__half_as_ushort(tile_mask[j*(nbatch_fa + 8) + i]));
-            }
-            printf("\n");
-        }
-    }
-
     // kb0_start is always < kb0_stop so the last iter can be executed unconditionally.
     if constexpr (ncols2 == 1) {
         constexpr bool oob_check = true;
@@ -1837,24 +1801,6 @@ static __global__ void flash_attn_ext_f16(
     const int stride_K    = nb11 / sizeof(half2);
     const int mask_elem_size = mask_type == 0 ? (int)sizeof(half) : 1; // f16 or u8
     const int stride_mask = nb31 / mask_elem_size; // positions per row
-
-    // DEBUG: one-shot dump of mask params and first bytes
-    if (blockIdx.x == 0 && threadIdx.x == 0 && threadIdx.y == 0 && mask && mask_type == 1) {
-        const uint8_t * m = (const uint8_t *)mask;
-        printf("F8FA DEBUG mask_type=%d mask_elem_size=%d stride_mask=%d nb31=%d ne31=%d ne32=%d ne33=%d mask[0..15]=",
-               mask_type, mask_elem_size, stride_mask, nb31, ne31, ne32, ne33);
-        for (int i = 0; i < 16 && i < ne31; ++i) {
-            printf("%02X ", m[i]);
-        }
-        printf("\n");
-        // Also dump first row of block 1 (offset by nbatch_fa)
-        const int row1_off = stride_mask; // second row
-        printf("F8FA DEBUG row1[0..15]=");
-        for (int i = 0; i < 16 && i < ne31; ++i) {
-            printf("%02X ", m[row1_off + i]);
-        }
-        printf("\n");
-    }
 
     const int stride_V = V_is_K_view ? stride_K : nb21 / sizeof(half2);
 
