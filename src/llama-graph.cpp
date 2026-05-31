@@ -56,10 +56,16 @@ static ggml_tensor * build_attn_inp_kq_mask(
     const auto n_tokens = ubatch.n_tokens;
     const auto n_stream = cparams.kv_unified ? 1 : ubatch.n_seqs_unq;
 
-    // flash attention requires an f16 mask
-    const auto type = cparams.flash_attn ? GGML_TYPE_F16 : GGML_TYPE_F32;
+    // flash attention requires an f16 mask (or I8 for compact mask modes)
+    const bool use_compact_mask = cparams.flash_attn && cparams.flash_attn_mask_type != LLAMA_FLASH_ATTN_MASK_F16;
+    const auto type = use_compact_mask ? GGML_TYPE_I8 : (cparams.flash_attn ? GGML_TYPE_F16 : GGML_TYPE_F32);
 
-    ggml_tensor * res = ggml_new_tensor_4d(ctx, type, n_kv, n_tokens/n_stream, 1, n_stream);
+    // for bit-packed mode, ne[0] is packed: ceil(n_kv / 8)
+    const int64_t ne0 = (cparams.flash_attn_mask_type == LLAMA_FLASH_ATTN_MASK_BIT && use_compact_mask)
+                            ? (n_kv + 7) / 8
+                            : n_kv;
+
+    ggml_tensor * res = ggml_new_tensor_4d(ctx, type, ne0, n_tokens/n_stream, 1, n_stream);
     ggml_set_input(res);
     ggml_set_name(res, "attn_inp_kq_mask");
 
@@ -75,9 +81,14 @@ static bool can_reuse_kq_mask(
     const auto n_tokens = ubatch.n_tokens;
     const auto n_stream = cparams.kv_unified ? 1 : ubatch.n_seqs_unq;
 
+    const bool use_compact_mask = cparams.flash_attn && cparams.flash_attn_mask_type != LLAMA_FLASH_ATTN_MASK_F16;
+    const int64_t ne0 = (cparams.flash_attn_mask_type == LLAMA_FLASH_ATTN_MASK_BIT && use_compact_mask)
+                            ? (n_kv + 7) / 8
+                            : n_kv;
+
     bool res = true;
 
-    res &= (kq_mask->ne[0] == n_kv);
+    res &= (kq_mask->ne[0] == ne0);
     res &= (kq_mask->ne[1] == n_tokens/n_stream);
     res &= (kq_mask->ne[2] == 1);
     res &= (kq_mask->ne[3] == n_stream);
@@ -2188,8 +2199,10 @@ ggml_tensor * llm_graph_context::build_attn_mha(
 llm_graph_input_attn_no_cache * llm_graph_context::build_attn_inp_no_cache() const {
     auto inp = std::make_unique<llm_graph_input_attn_no_cache>(hparams, cparams);
 
-    // flash attention requires an f16 mask
-    const auto type_mask = cparams.flash_attn ? GGML_TYPE_F16 : GGML_TYPE_F32;
+    // flash attention requires an f16 mask (or I8 for compact mask modes)
+    const auto type_mask = cparams.flash_attn
+        ? (cparams.flash_attn_mask_type != LLAMA_FLASH_ATTN_MASK_F16 ? GGML_TYPE_I8 : GGML_TYPE_F16)
+        : GGML_TYPE_F32;
 
     // note: there is no KV cache, so the number of KV values is equal to the number of tokens in the batch
     inp->self_kq_mask = ggml_new_tensor_4d(ctx0, type_mask, n_tokens, n_tokens, 1, 1);
@@ -2625,8 +2638,10 @@ llm_graph_input_attn_cross * llm_graph_context::build_attn_inp_cross() const {
 
     const int32_t n_enc = !cross->v_embd.empty() ? cross->n_enc : hparams.n_ctx_train;
 
-    // flash attention requires an f16 mask
-    const auto type_mask = cparams.flash_attn ? GGML_TYPE_F16 : GGML_TYPE_F32;
+    // flash attention requires an f16 mask (or I8 for compact mask modes)
+    const auto type_mask = cparams.flash_attn
+        ? (cparams.flash_attn_mask_type != LLAMA_FLASH_ATTN_MASK_F16 ? GGML_TYPE_I8 : GGML_TYPE_F16)
+        : GGML_TYPE_F32;
 
     inp->cross_kq_mask = ggml_new_tensor_4d(ctx0, type_mask, n_enc, n_tokens, 1, 1);
     ggml_set_input(inp->cross_kq_mask);

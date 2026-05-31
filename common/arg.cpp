@@ -1393,6 +1393,21 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
                                    string_format("error: unknown value for --flash-attn: '%s'\n", value.c_str()));
                            }
                        }).set_env("LLAMA_ARG_FLASH_ATTN"));
+    add_opt(common_arg({ "--flash-attn-mask-type" }, "<f16|u8|bit>",
+                       string_format("mask format for Flash Attention ('f16', 'u8', or 'bit', default: '%s')",
+                                     llama_flash_attn_mask_type_name(params.flash_attn_mask_type)),
+                       [](common_params & params, const std::string & value) {
+                           if (value == "f16") {
+                               params.flash_attn_mask_type = LLAMA_FLASH_ATTN_MASK_F16;
+                           } else if (value == "u8") {
+                               params.flash_attn_mask_type = LLAMA_FLASH_ATTN_MASK_U8;
+                           } else if (value == "bit") {
+                               params.flash_attn_mask_type = LLAMA_FLASH_ATTN_MASK_BIT;
+                           } else {
+                               throw std::runtime_error(
+                                   string_format("error: invalid value for --flash-attn-mask-type: '%s' (use f16, u8, or bit)\n", value.c_str()));
+                           }
+                       }).set_env("LLAMA_ARG_FLASH_ATTN_MASK_TYPE"));
     add_opt(common_arg(
         {"-p", "--prompt"}, "PROMPT",
         "prompt to start generation with; for system message, use -sys",
