@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -15,6 +17,30 @@
 
 static bool ggml_is_power_of_2(int n) {
     return (n & (n - 1)) == 0;
+}
+
+template <typename T>
+static void debug_histogram_kq_mask(const T * data, int64_t n_elements) {
+    const char * env = std::getenv("LLAMA_DEBUG_KQ_MASK_HIST");
+    if (!env || env[0] == '0') {
+        return;
+    }
+
+    std::map<float, int64_t> hist;
+    for (int64_t i = 0; i < n_elements; ++i) {
+        float val = llama_cast<float>(data[i]);
+        hist[val]++;
+    }
+
+    fprintf(stderr, "%s: KQ mask histogram (%lld elements, %zu unique values):\n",
+            __func__, (long long)n_elements, hist.size());
+    for (const auto & entry : hist) {
+        if (std::isinf(entry.first) && entry.first < 0) {
+            fprintf(stderr, "  -inf  : %lld (%.1f%%)\n", (long long)entry.second, 100.0 * entry.second / n_elements);
+        } else {
+            fprintf(stderr, "  %.6g : %lld (%.1f%%)\n", entry.first, (long long)entry.second, 100.0 * entry.second / n_elements);
+        }
+    }
 }
 
 // orthonormal Walsh-Hadamard rotation matrix
@@ -1653,8 +1679,10 @@ void llama_kv_cache::set_input_kq_mask(ggml_tensor * dst, const llama_ubatch * u
 
     if (dst->type == GGML_TYPE_F16) {
         set_input_kq_mask_impl<ggml_fp16_t>(args, (ggml_fp16_t *) dst->data, causal_attn);
+        debug_histogram_kq_mask((const ggml_fp16_t *) dst->data, ggml_nelements(dst));
     } else {
         set_input_kq_mask_impl<float>(args, (float *) dst->data, causal_attn);
+        debug_histogram_kq_mask((const float *) dst->data, ggml_nelements(dst));
     }
 
     //const int64_t t_end = ggml_time_us();
