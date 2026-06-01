@@ -1680,6 +1680,9 @@ void llama_kv_cache::set_input_kq_mask(ggml_tensor * dst, const llama_ubatch * u
     if (dst->type == GGML_TYPE_F16) {
         set_input_kq_mask_impl<ggml_fp16_t>(args, (ggml_fp16_t *) dst->data, causal_attn);
         debug_histogram_kq_mask((const ggml_fp16_t *) dst->data, ggml_nelements(dst));
+    } else if (dst->type == GGML_TYPE_I8) {
+        set_input_kq_mask_impl<uint8_t>(args, (uint8_t *) dst->data, causal_attn);
+        debug_histogram_kq_mask((const uint8_t *) dst->data, ggml_nelements(dst));
     } else {
         set_input_kq_mask_impl<float>(args, (float *) dst->data, causal_attn);
         debug_histogram_kq_mask((const float *) dst->data, ggml_nelements(dst));

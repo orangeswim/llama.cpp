@@ -375,6 +375,10 @@ llama_context::llama_context(
                 throw std::runtime_error("quantized V cache was requested, but this requires Flash Attention");
             }
         }
+
+        if (cparams.flash_attn && cparams.flash_attn_mask_type != LLAMA_FLASH_ATTN_MASK_F16) {
+            LLAMA_LOG_WARN("%s: compact KQ mask (u8) is experimental\n", __func__);
+        }
     }
 
     // Initialize the full vocabulary token ids for backend samplers.

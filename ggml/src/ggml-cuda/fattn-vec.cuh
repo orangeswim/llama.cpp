@@ -102,7 +102,9 @@ static __global__ void flash_attn_ext_vec(
     K += nb13*sequence + nb12*(head / gqa_ratio);
     V += nb23*sequence + nb22*(head / gqa_ratio);
 
-    const half * maskh  = (const half  *) (mask + nb33*(sequence % ne33) + nb31*ic0);
+    const bool mask_is_u8 = mask && mask->type == GGML_TYPE_I8;
+    const int mask_elem_size = mask_is_u8 ? 1 : (int)sizeof(half);
+    const char * maskh_bytes = mask ? (mask + nb33*(sequence % ne33) + nb31*ic0) : nullptr;
 
     const float slope = get_alibi_slope(max_bias, head, n_head_log2, m0, m1);
 
@@ -242,10 +244,10 @@ static __global__ void flash_attn_ext_vec(
     const int k_VKQ_max = KV_max ? KV_max[sequence*gridDim.x + blockIdx.x] : ne11;
     K     += blockIdx.y*nthreads * nb11;
     V     += blockIdx.y*nthreads * nb21;
-    maskh += blockIdx.y*nthreads;
+    maskh_bytes += blockIdx.y*nthreads * mask_elem_size;
     for (int k_VKQ_0 = blockIdx.y*nthreads; k_VKQ_0 < k_VKQ_max; k_VKQ_0 += gridDim.y*nthreads,
              // Increment pointers after each loop:
-             K += gridDim.y*nthreads*nb11, V += gridDim.y*nthreads*nb21, maskh += gridDim.y*nthreads) {
+             K += gridDim.y*nthreads*nb11, V += gridDim.y*nthreads*nb21, maskh_bytes += gridDim.y*nthreads*mask_elem_size) {
 
         // Calculate KQ tile and keep track of new maximum KQ values:
         float KQ_reg[ncols]; // KQ in registers.
@@ -270,7 +272,11 @@ static __global__ void flash_attn_ext_vec(
                 }
 
                 if (mask && (ncols == 1 || ic0 + j < int(ne01.z))) {
-                    sum += slope*__half2float(maskh[j*ne11 + i_KQ]);
+                    if (mask_is_u8) {
+                        sum += ((const uint8_t *)maskh_bytes)[j*ne11 + i_KQ] ? -INFINITY : 0.0f;
+                    } else {
+                        sum += slope*__half2float(((const half *)maskh_bytes)[j*ne11 + i_KQ]);
+                    }
                 }
 
                 KQ_max_new[j] = fmaxf(KQ_max_new[j], sum + FATTN_KQ_MAX_OFFSET);

@@ -30,8 +30,11 @@ static ggml_tensor * build_attn_inp_kq_mask(
     const auto n_tokens = ubatch.n_tokens;
     const auto n_stream = cparams.kv_unified ? 1 : ubatch.n_seqs_unq;
 
-    // flash attention requires an f16 mask
-    const auto type = cparams.flash_attn ? GGML_TYPE_F16 : GGML_TYPE_F32;
+    const bool use_compact_mask = cparams.flash_attn
+        && cparams.flash_attn_mask_type == LLAMA_FLASH_ATTN_MASK_U8;
+    const auto type = use_compact_mask ? GGML_TYPE_I8
+        : cparams.flash_attn ? GGML_TYPE_F16
+        : GGML_TYPE_F32;
 
     ggml_tensor * res = ggml_new_tensor_4d(ctx, type, n_kv, n_tokens/n_stream, 1, n_stream);
     ggml_set_input(res);
@@ -467,8 +470,10 @@ void llm_graph_input_attn_no_cache::set_input(const llama_ubatch * ubatch) {
     GGML_ASSERT(ggml_backend_buffer_is_host(self_kq_mask->buffer));
     if (self_kq_mask->type == GGML_TYPE_F16) {
         fill_mask((ggml_fp16_t *) self_kq_mask->data, ggml_nelements(self_kq_mask), 0, LLAMA_SWA_TYPE_NONE);
+    } else if (self_kq_mask->type == GGML_TYPE_I8) {
+        fill_mask((uint8_t      *) self_kq_mask->data, ggml_nelements(self_kq_mask), 0, LLAMA_SWA_TYPE_NONE);
     } else {
-        fill_mask((float       *) self_kq_mask->data, ggml_nelements(self_kq_mask), 0, LLAMA_SWA_TYPE_NONE);
+        fill_mask((float        *) self_kq_mask->data, ggml_nelements(self_kq_mask), 0, LLAMA_SWA_TYPE_NONE);
     }
 
     if (hparams.swa_type != LLAMA_SWA_TYPE_NONE) {
@@ -476,8 +481,10 @@ void llm_graph_input_attn_no_cache::set_input(const llama_ubatch * ubatch) {
         GGML_ASSERT(ggml_backend_buffer_is_host(self_kq_mask_swa->buffer));
         if (self_kq_mask_swa->type == GGML_TYPE_F16) {
             fill_mask((ggml_fp16_t *) self_kq_mask_swa->data, ggml_nelements(self_kq_mask_swa), hparams.n_swa, hparams.swa_type);
+        } else if (self_kq_mask_swa->type == GGML_TYPE_I8) {
+            fill_mask((uint8_t      *) self_kq_mask_swa->data, ggml_nelements(self_kq_mask_swa), hparams.n_swa, hparams.swa_type);
         } else {
-            fill_mask((float       *) self_kq_mask_swa->data, ggml_nelements(self_kq_mask_swa), hparams.n_swa, hparams.swa_type);
+            fill_mask((float        *) self_kq_mask_swa->data, ggml_nelements(self_kq_mask_swa), hparams.n_swa, hparams.swa_type);
         }
     }
 }
