@@ -543,7 +543,7 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
     const ggml_tensor * mask = dst->src[3];
     if (mask && mask->type == GGML_TYPE_I8) {
         const auto kernel = ggml_cuda_get_best_fattn_kernel(ggml_cuda_get_device(), dst);
-        if (kernel == BEST_FATTN_KERNEL_MMA_F16 || kernel == BEST_FATTN_KERNEL_WMMA_F16) {
+        if (kernel == BEST_FATTN_KERNEL_WMMA_F16) {
             GGML_ABORT("I8 KQ mask is not supported by this flash attention backend");
         }
     }
