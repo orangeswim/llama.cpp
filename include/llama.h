@@ -352,6 +352,7 @@ struct llama_context_params {
     enum llama_pooling_type      pooling_type;       // whether to pool (sum) embedding results by sequence id
     enum llama_attention_type    attention_type;     // attention type to use for embeddings
     enum llama_flash_attn_type   flash_attn_type;    // when to enable Flash Attention
+    enum llama_flash_attn_mask_type flash_attn_mask_type; // mask format for flash attention
 
     // ref: https://github.com/ggml-org/llama.cpp/pull/2054
     float    rope_freq_base;    // RoPE base frequency, 0 = from model
