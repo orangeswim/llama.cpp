@@ -172,6 +172,7 @@ llama_context::llama_context(
 
     cparams.flash_attn = params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
     cparams.auto_fa    = params.flash_attn_type == LLAMA_FLASH_ATTN_TYPE_AUTO;
+    cparams.flash_attn_mask_type = params.flash_attn_mask_type;
 
     cparams.fused_gdn_ar = true;
     cparams.fused_gdn_ch = true;
