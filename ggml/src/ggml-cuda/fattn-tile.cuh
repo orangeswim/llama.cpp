@@ -637,7 +637,9 @@ static __device__ __forceinline__ void flash_attn_tile_iter(
                 float mask_val = 0.0f;
                 if (ncols2 > 1 || mask) {
                     if (mask_is_u8) {
-                        mask_val = ((const uint8_t *)mask)[j*stride_mask + k_VKQ_0 + i_KQ] ? -INFINITY : 0.0f;
+                        if (((const uint8_t *)mask)[j*stride_mask + k_VKQ_0 + i_KQ]) {
+                            mask_val = -INFINITY;
+                        }
                     } else {
                         mask_val = slope*__half2float(mask[j*stride_mask + k_VKQ_0 + i_KQ]);
                     }
@@ -810,6 +812,7 @@ static __global__ void flash_attn_tile(
         const float m1,
         const uint32_t n_head_log2,
         const float logit_softcap,
+        const bool   mask_is_u8,
         const int32_t ne00, const uint3   ne01, const int32_t ne02, const int32_t ne03,
                             const int32_t nb01, const int32_t nb02, const int32_t nb03,
         const int32_t ne10, const int32_t ne11, const int32_t ne12, const int32_t ne13,
@@ -860,11 +863,10 @@ static __global__ void flash_attn_tile(
     const half2 * V_h2 = (const half2 *) (V + nb23*sequence + nb22*(head0 / gqa_ratio)); // K and V have same shape
 
     const half * maskh = mask ? (const half *) (mask + nb33*(sequence % ne33)) : nullptr;
-    const uint8_t * maskh_u8 = mask && mask->type == GGML_TYPE_I8 ? (const uint8_t *) (mask + nb33*(sequence % ne33)) : nullptr;
 
     const int stride_K2   = nb11 / sizeof(half2);
     const int stride_V2   = nb21 / sizeof(half2);
-    const int stride_mask = nb31 / (maskh_u8 ? 1 : sizeof(half));
+    const int stride_mask = nb31 / (mask_is_u8 ? 1 : (int)sizeof(half));
 
     const float slope = ncols2 == 1 ? get_alibi_slope(max_bias, head0, n_head_log2, m0, m1) : 1.0f;
 
@@ -961,14 +963,14 @@ static __global__ void flash_attn_tile(
         while (k_VKQ_0 < k_VKQ_max - nbatch_fa) {
             constexpr bool oob_check = false;
             flash_attn_tile_iter<warp_size, nwarps, ncols1, ncols2, DKQ, DV, nbatch_fa, nbatch_K, use_logit_softcap, oob_check>
-                (Q_tmp, K_h2, V_h2, maskh, maskh_u8 != nullptr, ne01, logit_softcap, slope, KQ, KV_tmp,
+                (Q_tmp, K_h2, V_h2, maskh, mask_is_u8, ne01, logit_softcap, slope, KQ, KV_tmp,
                 stride_K2, stride_V2, stride_mask, KQ_max, KQ_sum, VKQ, k_VKQ_0, k_VKQ_max, col_Q_0);
             k_VKQ_0 += gridDim.y*nbatch_fa;
         }
         if (k_VKQ_0 < k_VKQ_max) {
             constexpr bool oob_check = true;
             flash_attn_tile_iter<warp_size, nwarps, ncols1, ncols2, DKQ, DV, nbatch_fa, nbatch_K, use_logit_softcap, oob_check>
-                (Q_tmp, K_h2, V_h2, maskh, maskh_u8 != nullptr, ne01, logit_softcap, slope, KQ, KV_tmp,
+                (Q_tmp, K_h2, V_h2, maskh, mask_is_u8, ne01, logit_softcap, slope, KQ, KV_tmp,
                 stride_K2, stride_V2, stride_mask, KQ_max, KQ_sum, VKQ, k_VKQ_0, k_VKQ_max, col_Q_0);
         }
     } else {
@@ -976,7 +978,7 @@ static __global__ void flash_attn_tile(
         for (int k_VKQ_0 = blockIdx.y*nbatch_fa; k_VKQ_0 < k_VKQ_max; k_VKQ_0 += gridDim.y*nbatch_fa) {
             constexpr bool oob_check = false;
             flash_attn_tile_iter<warp_size, nwarps, ncols1, ncols2, DKQ, DV, nbatch_fa, nbatch_K, use_logit_softcap, oob_check>
-                (Q_tmp, K_h2, V_h2, maskh, maskh_u8 != nullptr, ne01, logit_softcap, slope, KQ, KV_tmp,
+                (Q_tmp, K_h2, V_h2, maskh, mask_is_u8, ne01, logit_softcap, slope, KQ, KV_tmp,
                 stride_K2, stride_V2, stride_mask, KQ_max, KQ_sum, VKQ, k_VKQ_0, k_VKQ_max, col_Q_0);
         }
     }

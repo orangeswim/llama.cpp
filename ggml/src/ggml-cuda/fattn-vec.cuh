@@ -33,6 +33,7 @@ static __global__ void flash_attn_ext_vec(
         const float m1,
         const uint32_t n_head_log2,
         const float logit_softcap,
+        const bool   mask_is_u8,
         const int32_t ne00, const uint3   ne01, const int32_t ne02, const int32_t ne03,
                             const int32_t nb01, const int32_t nb02, const int32_t nb03,
         const int32_t ne10, const int32_t ne11, const int32_t ne12, const int32_t ne13,
@@ -102,7 +103,6 @@ static __global__ void flash_attn_ext_vec(
     K += nb13*sequence + nb12*(head / gqa_ratio);
     V += nb23*sequence + nb22*(head / gqa_ratio);
 
-    const bool mask_is_u8 = mask && mask->type == GGML_TYPE_I8;
     const int mask_elem_size = mask_is_u8 ? 1 : (int)sizeof(half);
     const char * maskh_bytes = mask ? (mask + nb33*(sequence % ne33) + nb31*ic0) : nullptr;
 
@@ -273,7 +273,9 @@ static __global__ void flash_attn_ext_vec(
 
                 if (mask && (ncols == 1 || ic0 + j < int(ne01.z))) {
                     if (mask_is_u8) {
-                        sum += ((const uint8_t *)maskh_bytes)[j*ne11 + i_KQ] ? -INFINITY : 0.0f;
+                        if (((const uint8_t *)maskh_bytes)[j*ne11 + i_KQ]) {
+                            sum = -INFINITY;
+                        }
                     } else {
                         sum += slope*__half2float(((const half *)maskh_bytes)[j*ne11 + i_KQ]);
                     }

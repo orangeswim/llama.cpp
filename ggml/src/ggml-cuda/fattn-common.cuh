@@ -33,6 +33,7 @@ typedef void (* fattn_kernel_t)(
         const float m1,
         const uint32_t n_head_log2,
         const float logit_softcap,
+        const bool   mask_is_u8,
         const int32_t ne00, const uint3   ne01, const int32_t ne02, const int32_t ne03,
                             const int32_t nb01, const int32_t nb02, const int32_t nb03,
         const int32_t ne10, const int32_t ne11, const int32_t ne12, const int32_t ne13,
@@ -1153,6 +1154,8 @@ void launch_fattn(
 
     GGML_ASSERT(block_dim.x % warp_size == 0);
 
+    const bool mask_is_u8 = mask && mask->type == GGML_TYPE_I8;
+
         // disabled PDL enrollment for now due to a compiler bug.
         fattn_kernel<<<blocks_num, block_dim, nbytes_shared, main_stream>>>(
         (const char *) Q->data,
@@ -1162,7 +1165,7 @@ void launch_fattn(
         sinks ? ((const char *) sinks->data) : nullptr,
         KV_max.ptr,
         !stream_k && parallel_blocks > 1 ? dst_tmp.ptr : (float *) KQV->data, dst_tmp_meta.ptr,
-        scale, max_bias, m0, m1, n_head_log2, logit_softcap,
+        scale, max_bias, m0, m1, n_head_log2, logit_softcap, mask_is_u8,
         Q->ne[0], ne01,     Q->ne[2], Q->ne[3], Q->nb[1], Q->nb[2], Q->nb[3],
         K->ne[0], K->ne[1], K->ne[2], K->ne[3], nb11, nb12, nb13,
         nb21, nb22, nb23,
